@@ -1,19 +1,20 @@
-//configure file
-var conf = require('./conf')
-
-var facebook = require('./facebook.js');
-
 //express
-var express = require('express');
+express = require('express');
 
-var flash = require('connect-flash');
-var app = express();
-var http = require('http');
-var server = http.createServer(app);
-var sio = require('socket.io');
-var io = sio.listen(server);
+//configure file
+conf = require('./conf')
 
-var hash = require('node_hash');
+facebook = require('./facebook.js');
+
+
+flash = require('connect-flash');
+app = express();
+http = require('http');
+server = http.createServer(app);
+sio = require('socket.io');
+io = sio.listen(server);
+
+hash = require('node_hash');
 
 
 
@@ -51,73 +52,25 @@ app.configure(function() {
     app.use(app.router);
 });
 
-//mongoskin
-var mongo = require('mongoskin');
-var db = mongo.db('localhost:27017/gamewithus?auto_reconnect', {safe: true});
-var ObjectID = db.ObjectID;
-var userColl = db.collection('users');
-var userInfoColl = db.collection('userinfo');
+//mongoskin. intentionally global so that all the controllers can access this shit. will fix later
+mongo = require('mongoskin');
+db = mongo.db('localhost:27017/gamewithus?auto_reconnect', {safe: true});
+ObjectID = db.ObjectID;
+userColl = db.collection('users');
+userInfoColl = db.collection('userinfo');
 
 //controllers
-var auth = require('./controllers/auth.js')
+var auth = require('./controllers/auth.js');
+var social = require('./controllers/social.js');
 
 
 //passport code
 passport.use(new FacebookStrategy({
-    clientID: conf.fb.appId,
-    clientSecret: conf.fb.appSecret,
-    callbackURL: "http://localhost:"+conf.expressPort+"/auth/facebook/callback"
-}, function(accessToken, refreshToken, profile, done) {
-
-    facebook.getFbData(accessToken, '/me/friends', function(data){
-        var friends = [];
-        var data = JSON.parse(data);
-        for (var i = 0; i < data.data.length; i++) {
-            friends.push({fbID: data.data[i]['id']});
-        }
-        userColl.findOne({
-            fbID: profile.id
-        }, function(err, account) {
-
-            if (err) {
-                return done(err);
-            }
-            if (account) {
-                var toInsert = {$set: {friends: friends}};
-                userColl.update( {fbID : profile.id} , toInsert, function(err){
-                    if (err){
-                        return done(err);
-                    } else {
-                        userColl.findOne({
-                            fbID: profile.id
-                        }, function(err, accountUpdated) {
-                            return done(null, accountUpdated)
-                        });
-                    }
-                });
-            } else {
-                var newAccount = {};
-                newAccount.type = 'facebook';
-                newAccount.picture = 'https://graph.facebook.com/' + profile.id + '/picture'
-                newAccount.name = profile.displayName;
-                //newAccount.myId = {fbID : profile.id}
-                newAccount.friends = friends;
-                newAccount.fbID = profile.id;
-                newAccount.date = new Date();
-                userColl.insert(newAccount, function(err, result) {
-                    if (err) {
-                        console.log("Facebook Insert Error in User Collection: " + err);
-                        return done(err);
-                        return;
-                    } else {
-                        return done(null, result[0]);
-                        //do nothing, adding was a success
-                    }
-                });
-            }
-        });
-    });
-}));
+        clientID: conf.fb.appId,
+        clientSecret: conf.fb.appSecret,
+        callbackURL: "http://localhost:"+conf.expressPort+"/auth/facebook/callback"
+    }, auth.facebookCallback)
+);
 
 passport.serializeUser(function(user, done) {
     done(null, user._id);
@@ -131,32 +84,7 @@ passport.deserializeUser(function(id, done) {
     });
 });
 
-passport.use(new LocalStrategy(function(username, password, done) {
-    if (username) {
-        userColl.findOne({
-            username: username
-        }, function(err, user) {
-            if (err) {
-                return done(err);
-            }
-            if (!user) {
-                return done(null, false, {
-                    message: 'Unknown user'
-                });
-            }
-            var saltedAndHashedPassword = hash.sha256(password, user.salt); 
-            if (! (saltedAndHashedPassword == user.password) ) { //do the salt and hash
-                return done(null, false, { message: 'Invalid password' });
-            }
-
-            return done(null, user);
-        });
-    } else {
-        return done(null, false, {
-            message: 'Empty username'
-        });
-    }
-}));
+passport.use(new LocalStrategy(auth.localStrategy));
 
 app.get('/', function(req, res) {
     if (req.user) { 
@@ -199,8 +127,15 @@ app.post('/auth/local', passport.authenticate('local', {
     failureFlash: 'Invalid username or password'
 }));
 
-app.post('/add/friends', function(req,res){
-    var friendIds = req.body.friendIds;
+app.get('/friends', social.getFacebookFriends);
+
+
+/*
+app.post('/add/localFriend', function(req,res){
+    var friendId = req.body.friendId;
+
+
+
     if (req.user){
     
         userColl.update(  {_id : req.user._id}, updateObj, function(err, result) {
@@ -211,18 +146,7 @@ app.post('/add/friends', function(req,res){
         }); 
     }
 })
-
-app.post('/friends', function(req, res){
-   if (req.user){
-        userColl.findOne(  {_id : req.user._id}, function(err, result) {
-           if (err){
-               throw err;
-           } 
-           var friends = result.friends;
-           var findObj = {$or: friends};
-        });
-   } 
-});
+*/
 
 /*
 app.post('/reportTimeAndRoute', function(req, res){

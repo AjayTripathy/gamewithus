@@ -1,27 +1,3 @@
-//configure file
-//var conf = require('./conf')
-
-//var facebook = require('./facebook.js');
-
-//express
-var express = require('express');
-
-var flash = require('connect-flash');
-var app = express();
-var http = require('http');
-var server = http.createServer(app);
-var sio = require('socket.io');
-var io = sio.listen(server);
-
-//mongoskin
-var mongo = require('mongoskin');
-var db = mongo.db('localhost:27017/gamewithus?auto_reconnect', {safe: true});
-var ObjectID = db.ObjectID;
-var userColl = db.collection('users');
-var userInfoColl = db.collection('userinfo');
-
-//auth
-var hash = require('node_hash');
 
 var generateId = function(){
     var text = "";
@@ -74,5 +50,84 @@ exports.registerLocal = function (req,res) {
                 });
             });
         }
+    });
+}
+
+exports.localStrategy = function(username, password, done) {
+    if (username) {
+        userColl.findOne({
+            username: username
+        }, function(err, user) {
+            if (err) {
+                return done(err);
+            }
+            if (!user) {
+                return done(null, false, {
+                    message: 'Unknown user'
+                });
+            }
+            var saltedAndHashedPassword = hash.sha256(password, user.salt); 
+            if (! (saltedAndHashedPassword == user.password) ) { //do the salt and hash
+                return done(null, false, { message: 'Invalid password' });
+            }
+
+            return done(null, user);
+        });
+    } else {
+        return done(null, false, {
+            message: 'Empty username'
+        });
+    }
+}
+
+exports.facebookCallback = function(accessToken, refreshToken, profile, done) {
+
+    facebook.getFbData(accessToken, '/me/friends', function(data){
+        var friends = [];
+        var data = JSON.parse(data);
+        for (var i = 0; i < data.data.length; i++) {
+            friends.push({fbID: data.data[i]['id']});
+        }
+        userColl.findOne({
+            fbID: profile.id
+        }, function(err, account) {
+
+            if (err) {
+                return done(err);
+            }
+            if (account) {
+                var toInsert = {$set: {friends: friends}};
+                userColl.update( {fbID : profile.id} , toInsert, function(err){
+                    if (err){
+                        return done(err);
+                    } else {
+                        userColl.findOne({
+                            fbID: profile.id
+                        }, function(err, accountUpdated) {
+                            return done(null, accountUpdated)
+                        });
+                    }
+                });
+            } else {
+                var newAccount = {};
+                newAccount.type = 'facebook';
+                newAccount.picture = 'https://graph.facebook.com/' + profile.id + '/picture'
+                newAccount.name = profile.displayName;
+                //newAccount.myId = {fbID : profile.id}
+                newAccount.friends = friends;
+                newAccount.fbID = profile.id;
+                newAccount.date = new Date();
+                userColl.insert(newAccount, function(err, result) {
+                    if (err) {
+                        console.log("Facebook Insert Error in User Collection: " + err);
+                        return done(err);
+                        return;
+                    } else {
+                        return done(null, result[0]);
+                        //do nothing, adding was a success
+                    }
+                });
+            }
+        });
     });
 }
