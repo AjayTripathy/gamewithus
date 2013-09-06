@@ -58,6 +58,7 @@ db = mongo.db('localhost:27017/gamewithus?auto_reconnect', {safe: true});
 ObjectID = db.ObjectID;
 userColl = db.collection('users');
 userInfoColl = db.collection('userinfo');
+gameColl = db.collection('games')
 
 //controllers
 var auth = require('./controllers/auth.js');
@@ -127,7 +128,16 @@ app.post('/auth/local', passport.authenticate('local', {
     failureFlash: 'Invalid username or password'
 }));
 
+
+app.get('/game/:id/:name', web.displayGame);
+
 app.get('/friends', social.getFacebookFriends);
+
+
+app.get('/browse/games', web.browseGames);
+
+
+
 
 
 /*

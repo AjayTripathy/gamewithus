@@ -16,7 +16,9 @@
     "passport-local": "0.1.x",
     "ejs": "0.8.x",
     "connect-flash": "0.1.x",
-    "node_hash": "*"
+    "node_hash": "*",
+    "node.io": "*",
+    "request": "*"
   },
   "author": "Ajay Tripathy",
   "license": "SUPER RESTRICTIVE"
